@@ -1,0 +1,57 @@
+name: Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Node.js ${{ matrix.node }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: ['22', '11', '10', '8', '6']
+        include:
+          - os: macos-latest
+            node: '22'
+          - os: windows-latest
+            node: '22'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Print the tool versions
+        run: |
+          node --version
+          npm --version
+      - name: Install the dependencies
+        # `--ignore-scripts` skips the node-gyp build of the optional native
+        # addons (bufferutil, utf-8-validate). They ship N-API prebuilds only,
+        # so Node.js 6 and 8 would compile them from source, and the runners
+        # have no Python 2 for the node-gyp bundled with those npm versions.
+        # `ws` requires both addons optionally and falls back to its JavaScript
+        # implementation when they are unavailable.
+        run: npm install --ignore-scripts
+      - name: Run the test suite
+        if: runner.os != 'Windows'
+        run: npm test
+      - name: Run the test suite without the coverage report
+        # `npm test` pipes mocha through nyc 13 (2019), whose spawn-wrap shim
+        # cannot launch a modern Node.js on Windows ("Cannot find module
+        # ...\node"). Run the same lint and the same mocha suite directly
+        # there; only the coverage report is lost.
+        if: runner.os == 'Windows'
+        run: npm run lint && npx mocha test/*.test.js
+      - name: Pack the release tarball
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
+        run: npm pack
+      - name: Upload the release tarball
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '22'
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: ws-*.tgz
+          if-no-files-found: error

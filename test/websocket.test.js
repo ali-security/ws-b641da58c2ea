@@ -10,6 +10,16 @@ const url = require('url');
 const fs = require('fs');
 
 const WebSocket = require('..');
+
+//
+// OpenSSL 3 (Node.js >= 17) rejects the SHA-1 signed fixture certificates at
+// its default security level. Lower the security level where the option is
+// understood (OpenSSL >= 1.1.0) so that the TLS tests keep running.
+//
+const weakCertOptions =
+  parseFloat(process.versions.openssl) >= 1.1
+    ? { ciphers: 'DEFAULT:@SECLEVEL=0' }
+    : {};
 const { GUID } = require('../lib/constants');
 
 class CustomAgent extends http.Agent {
@@ -510,7 +520,7 @@ describe('WebSocket', () => {
           `HTTP/1.1 401 ${http.STATUS_CODES[401]}\r\n` +
             'Connection: close\r\n' +
             'Content-type: text/html\r\n' +
-            `Content-Length: ${http.STATUS_CODES[401].length}\r\n` +
+            'Content-Length: 3\r\n' +
             '\r\n' +
             'foo'
         );
@@ -542,7 +552,7 @@ describe('WebSocket', () => {
           `HTTP/1.1 401 ${http.STATUS_CODES[401]}\r\n` +
             'Connection: close\r\n' +
             'Content-type: text/html\r\n' +
-            `Content-Length: ${http.STATUS_CODES[401].length}\r\n` +
+            'Content-Length: 3\r\n' +
             '\r\n' +
             'foo'
         );
@@ -1762,12 +1772,17 @@ describe('WebSocket', () => {
     });
 
     it('connects to secure websocket server with client side certificate', (done) => {
-      const server = https.createServer({
-        cert: fs.readFileSync('test/fixtures/certificate.pem'),
-        ca: [fs.readFileSync('test/fixtures/ca1-cert.pem')],
-        key: fs.readFileSync('test/fixtures/key.pem'),
-        requestCert: true
-      });
+      const server = https.createServer(
+        Object.assign(
+          {
+            cert: fs.readFileSync('test/fixtures/certificate.pem'),
+            ca: [fs.readFileSync('test/fixtures/ca1-cert.pem')],
+            key: fs.readFileSync('test/fixtures/key.pem'),
+            requestCert: true
+          },
+          weakCertOptions
+        )
+      );
 
       let success = false;
       const wss = new WebSocket.Server({
@@ -1785,11 +1800,17 @@ describe('WebSocket', () => {
       });
 
       server.listen(0, () => {
-        const ws = new WebSocket(`wss://localhost:${server.address().port}`, {
-          cert: fs.readFileSync('test/fixtures/agent1-cert.pem'),
-          key: fs.readFileSync('test/fixtures/agent1-key.pem'),
-          rejectUnauthorized: false
-        });
+        const ws = new WebSocket(
+          `wss://localhost:${server.address().port}`,
+          Object.assign(
+            {
+              cert: fs.readFileSync('test/fixtures/agent1-cert.pem'),
+              key: fs.readFileSync('test/fixtures/agent1-key.pem'),
+              rejectUnauthorized: false
+            },
+            weakCertOptions
+          )
+        );
       });
     });
 

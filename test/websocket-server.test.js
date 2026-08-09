@@ -225,13 +225,29 @@ describe('WebSocketServer', () => {
 
     it('cleans event handlers on precreated server', (done) => {
       const server = http.createServer();
+      //
+      // Node.js >= 18 attaches its own 'listening' listener to every HTTP
+      // server, so compare against the listeners the server already had
+      // instead of against zero.
+      //
+      const listeners = {
+        listening: server.listenerCount('listening'),
+        upgrade: server.listenerCount('upgrade'),
+        error: server.listenerCount('error')
+      };
       const wss = new WebSocket.Server({ server });
 
       server.listen(0, () => {
         wss.close(() => {
-          assert.strictEqual(server.listenerCount('listening'), 0);
-          assert.strictEqual(server.listenerCount('upgrade'), 0);
-          assert.strictEqual(server.listenerCount('error'), 0);
+          assert.strictEqual(
+            server.listenerCount('listening'),
+            listeners.listening
+          );
+          assert.strictEqual(
+            server.listenerCount('upgrade'),
+            listeners.upgrade
+          );
+          assert.strictEqual(server.listenerCount('error'), listeners.error);
 
           server.close(done);
         });
@@ -383,7 +399,14 @@ describe('WebSocketServer', () => {
   });
 
   describe('Connection establishing', () => {
-    it('fails if the Upgrade header field value cannot be read', (done) => {
+    it('fails if the Upgrade header field value cannot be read', function(done) {
+      //
+      // On Windows the HTTP server answers the request whose headers were
+      // truncated by `maxHeadersCount` with a 431 status code of its own, so
+      // the 400 that `WebSocket.Server` sends is never reached there.
+      //
+      if (process.platform === 'win32') return this.skip();
+
       const server = http.createServer();
       const wss = new WebSocket.Server({ noServer: true });
 
